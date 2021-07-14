@@ -65,9 +65,13 @@ SetTissue <- function(table, tissue) {
 ```{r read in the sample sheet}
 # must read in as a 'text delimited' txt file
 sampleTable <- ReadTable("data/Sample_sheet2.txt")
+sampleTable
 
 sampletable_med <- subset(sampleTable, Tissue == "med")
+sampletable_med
+
 sampletable_csc <- subset(sampleTable, Tissue == "csc")
+sampletable_csc
 
 # load in the count data to produce a count matrix
 # directory is path to directory where the counts are stored (one per sample)
@@ -75,66 +79,141 @@ sampletable_csc <- subset(sampleTable, Tissue == "csc")
 ddsHTSeq <- DESeqDataSetFromHTSeqCount(sampleTable = sampleTable,
                                        directory = "data/4th_col",
                                        design = ~ 1)
+
+dds_med <- DESeqDataSetFromHTSeqCount(sampleTable = sampletable_med,
+                                       directory = "data/4th_col",
+                                       design = ~ 1)
+
+dds_csc <- DESeqDataSetFromHTSeqCount(sampleTable = sampletable_csc,
+                                       directory = "data/4th_col",
+                                       design = ~ 1)
+
 ```
 
 ```{r filter low counts and re-factor}
-# pre-filter to exclude rows with few reads, reduce memory size of ddsHTSeq object,
-# and increase speed of transformation and testing functions
-
-keep <- rowSums(counts(ddsHTSeq)) >= 10
-ddsHTSeq_filtered <- ddsHTSeq[keep,]
+# pre-filter to exclude rows with few reads, reduce memory size of ddsHTSeq ,dds_med, and dds_csc object
+# increase speed of transformation and testing functions
+ddsHTSeq_filtered <- ddsHTSeq[rowSums(counts(ddsHTSeq)) >= 10, ]
+dds_med_filtered <- dds_med[rowSums(counts(dds_med)) >= 10,]
+dds_csc_filtered <- dds_csc[rowSums(counts(dds_csc)) >= 10,]
 
 # add a new "group" column to ddsHTSeq_filtered object by pasting 3 existing columns
 ddsHTSeq_filtered$group <- factor(paste0(ddsHTSeq_filtered$Age, 
                                          ddsHTSeq_filtered$Genotype,
                                          ddsHTSeq_filtered$Tissue))
-
 # set Genotype, Age, Tissue as a factor and relevel 'WT' as baseline
 ddsHTSeq_filtered$Genotype <- factor(ddsHTSeq_filtered$Genotype)
 ddsHTSeq_filtered$Age <- factor(ddsHTSeq_filtered$Age)
 ddsHTSeq_filtered$Tissue <- factor(ddsHTSeq_filtered$Tissue)
-
 ddsHTSeq_filtered$Genotype <- relevel(ddsHTSeq_filtered$Genotype, ref = "WT")
-
 design(ddsHTSeq_filtered) <- ~ group
+
+
+# add a  new "group" column to dds_med_filtered object by pasting 3 existing columns
+dds_med_filtered$group <- factor(paste0(dds_med_filtered$Age, 
+                                         dds_med_filtered$Genotype))
+# set Genotype, Age, Tissue as a factor and relevel 'WT' as baseline
+dds_med_filtered$Genotype <- factor(dds_med_filtered$Genotype)
+dds_med_filtered$Age <- factor(dds_med_filtered$Age)
+dds_med_filtered$Genotype <- relevel(dds_med_filtered$Genotype, ref = "WT")
+design(dds_med_filtered) <- ~ group
+
+
+# add a  new "group" column to dds_csc_filtered object by pasting 3 existing columns
+dds_csc_filtered$group <- factor(paste0(dds_csc_filtered$Age, 
+                                         dds_csc_filtered$Genotype))
+# set Genotype, Age, Tissue as a factor and relevel 'WT' as baseline
+dds_csc_filtered$Genotype <- factor(dds_csc_filtered$Genotype)
+dds_csc_filtered$Age <- factor(dds_csc_filtered$Age)
+dds_csc_filtered$Genotype <- relevel(dds_csc_filtered$Genotype, ref = "WT")
+design(dds_csc_filtered) <- ~ group
 ```
 
 ```{r transform matrix using variance stabilizing transformation}
-vsd <- vst(ddsHTSeq_filtered, blind = FALSE)
+vsd_all <- vst(ddsHTSeq_filtered, blind = FALSE)
+vsd_med <- vst(dds_med_filtered, blind = FALSE)
+vsd_csc <- vst(dds_csc_filtered, blind = FALSE)
 ```
 
 ```{r fit statistical model}
 dds <- DESeq(ddsHTSeq_filtered)
+dds_med <- DESeq(dds_med_filtered)
+dds_csc <- DESeq(dds_csc_filtered)
 
 # results function extracts a results table with log2 fold changes, p values and 
-# adjusted p values.
+# adjusted p values. More strict filtering to increase power is automatically applied via 
+# independent filtering on the mean of normalized counts
 res <- results(dds)
+res
+
+res_med <- results(dds_med)
+res_med
+
+res_csc <- results(dds_csc)
+res_csc
 # res_age <- results(dds, contrast = c("Age","9w","5w"))
 ```
 
 ```{r log fold change shrinkage}
 resultsNames(dds)
+
+resultsNames(dds_med)
+
+resultsNames(dds_csc)
 ```
 
 
 ```{r log fold change shrinkage_2}
-resLFC_5w_cscbyGeno <- lfcShrink(dds, coef ="group_5wWTcsc_vs_5wKIcsc", type="apeglm")
-
+resLFC_5wbyGeno <- lfcShrink(dds, coef ="group_5wWTcsc_vs_5wKIcsc", type="apeglm")
 resLFC_cscbyAge_59 <- lfcShrink(dds, coef ="group_9wKIcsc_vs_5wKIcsc", type="apeglm")
-
 resLFC_cscbyAge_5p <- lfcShrink(dds, coef ="group_pKIcsc_vs_5wKIcsc", type="apeglm")
+ 
+resLFC_5w_medbyGeno <- lfcShrink(dds_med, coef ="group_5wWT_vs_5wKI", type="apeglm")
+resLFC_medbyAge_59KI <- lfcShrink(dds_med, coef ="group_9wKI_vs_5wKI", type="apeglm")
+resLFC_medbyAge_5pKI <- lfcShrink(dds_med, coef ="group_pKI_vs_5wKI", type="apeglm")
+
+resLFC_5w_cscbyGeno <- lfcShrink(dds_csc, coef ="group_5wWT_vs_5wKI", type="apeglm")
+resLFC_cscbyAge_59KI <- lfcShrink(dds_csc, coef ="group_9wKI_vs_5wKI", type="apeglm")
+resLFC_cscbyAge_5pKI <- lfcShrink(dds_csc, coef ="group_pKI_vs_5wKI", type="apeglm")
+
 ```
 
 ```{r MA-plot}
+# plotMA shows the log2 fold changes attributable to a given variable over the mean of
+# normalized counts for all the samples in the DESeqDataSet
+
+# Points will be colored red if the adjusted p value is less than 0.1
+# Points which fall out of the window are plotted as open triangles pointing either up or down
+
 plotMA(res, ylim=c(-2,2), cex = 0.8)
+abline(h = c(-1,1), col="dodgerblue", lwd=2)
+
+plotMA(res_med, ylim=c(-2,2), cex = 0.8)
+abline(h = c(-1,1), col="dodgerblue", lwd=2)
+
+plotMA(res_csc, ylim=c(-2,2), cex = 0.8)
+abline(h = c(-1,1), col="dodgerblue", lwd=2)
+
+#  Visualize the MA-plot for the shrunken log2 fold change, remove the noise associated with log2 fold changes 
+
+plotMA(resLFC_5w_medbyGeno, ylim=c(-2,2), cex = 0.8)
 abline(h = c(-1,1), col="dodgerblue", lwd=2)
 
 plotMA(resLFC_5w_cscbyGeno, ylim=c(-2,2), cex = 0.8)
 abline(h = c(-1,1), col="dodgerblue", lwd=2)
 
-plotMA(resLFC_cscbyAge_59, ylim=c(-2,2))
+# MA-plot for the shrunken log2 fold chang in med by age
+plotMA(resLFC_medbyAge_59KI, ylim=c(-2,2), cex = 0.8)
+abline(h = c(-1,1), col="dodgerblue", lwd=2)
 
-plotMA(resLFC_cscbyAge_5p, ylim=c(-2,2), cex = 0.8)
+plotMA(resLFC_medbyAge_5pKI, ylim=c(-2,2), cex = 0.8)
+abline(h = c(-1,1), col="dodgerblue", lwd=2)
+
+# MA-plot for the shrunken log2 fold chang in csc by age
+plotMA(resLFC_cscbyAge_59KI, ylim=c(-2,2), cex = 0.8)
+abline(h = c(-1,1), col="dodgerblue", lwd=2)
+
+plotMA(resLFC_cscbyAge_5pKI, ylim=c(-2,2), cex = 0.8)
 abline(h = c(-1,1), col="dodgerblue", lwd=2)
 ```
 
@@ -153,20 +232,63 @@ plotCounts(dds, gene = which.min(res$padj), intgroup = "Genotype")
 
 # specify individual gene from the results table
 plotCounts(dds, gene = "Iba57", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Iba57", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Iba57", intgroup = "Genotype")
 
 plotCounts(dds, gene = "Gfap", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Gfap", intgroup = "Genotype") 
+plotCounts(dds_csc, gene = "Gfap", intgroup = "Genotype")I
 
 plotCounts(dds, gene = "Atxn7", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Atxn7", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Atxn7", intgroup = "Genotype")
 
 plotCounts(dds, gene = "Rbfox3", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Rbfox3", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Rbfox3", intgroup = "Genotype")
 
-plotCounts(dds, gene = "Chat", intgroup = "Genotype")
+# myelin glycoprotein
+plotCounts(dds, gene = "Mog", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Mog", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Mog", intgroup = "Genotype")
 
-# more customized plot
-d <- plotCounts(dds, gene = "Atxn7", intgroup="Genotype", 
+plotCounts(dds, gene = "Plp1", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Plp1", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Plp1", intgroup = "Genotype")
+
+plotCounts(dds, gene = "Nos2", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Nos2", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Nos2", intgroup = "Genotype")
+
+plotCounts(dds, gene = "Slc13a1", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Slc13a1", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Slc13a1", intgroup = "Genotype")
+
+plotCounts(dds, gene = "Gsk3b", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Gsk3b", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Gsk3b", intgroup = "Genotype")
+
+plotCounts(dds, gene = "Casp9", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Casp9", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Casp9", intgroup = "Genotype")
+
+plotCounts(dds, gene = "Nefh", intgroup = "Genotype")
+plotCounts(dds_med, gene = "Nefh", intgroup = "Genotype")
+plotCounts(dds_csc, gene = "Nefh", intgroup = "Genotype")
+
+
+# more customized plot of GFAP level by genotype
+d_med <- plotCounts(dds_med, gene = "Gfap", intgroup="Genotype", 
                 returnData=TRUE)
-
 ggplot(d, aes(x = Genotype, y=count)) + 
+  labs(title = "Level of GFAP in medulla") + 
+  geom_point(position = position_jitter(w = 0.1,h = 0)) + 
+  scale_y_log10(breaks = c(25,100,400))
+
+d_csc <- plotCounts(dds_csc, gene = "Gfap", intgroup="Genotype", 
+                returnData=TRUE)
+ggplot(d, aes(x = Genotype, y=count)) + 
+  labs(title = "Level of GFAP in cervical spinal cord") + 
   geom_point(position = position_jitter(w = 0.1,h = 0)) + 
   scale_y_log10(breaks = c(25,100,400))
 
@@ -178,36 +300,129 @@ ggplot(d, aes(x = Genotype, y=count)) +
 # the standard deviation of the transformed data, across samples, against the mean
 # a flat curve should be the goal of such transformations
 ntd <- normTransform(dds)
+ntd_med <- normTransform(dds_med)
+ntd_csc <- normTransform(dds_csc)
+
 meanSdPlot(assay(ntd))
+meanSdPlot(assay(ntd_med)) # more variance
+meanSdPlot(assay(ntd_csc)) # less variance
 ```
 
 ```{r Heatmap of the count matrix}
-select <- order(rowMeans(counts(dds,normalized = TRUE)),
+# heatmap of med & csc
+select_all <- order(rowMeans(counts(dds,normalized = TRUE)),
                 decreasing=TRUE)[1:20]
-
 df <- as.data.frame(colData(dds)[,c("Age","Genotype")])
 pheatmap(assay(ntd)[select,], cluster_rows=FALSE, show_rownames=FALSE,
          cluster_cols=FALSE, annotation_col=df)
+
+# heatmap of med 
+select_med <- order(rowMeans(counts(dds_med,normalized = TRUE)),
+                decreasing=TRUE)[1:20]
+df <- as.data.frame(colData(dds_med)[,c("Age","Genotype")])
+pheatmap(assay(ntd_med)[select_med,], cluster_rows=FALSE, show_rownames=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+
+# heatmap of csc
+select_csc <- order(rowMeans(counts(dds_csc,normalized = TRUE)),
+                decreasing=TRUE)[1:20]
+df <- as.data.frame(colData(dds_csc)[,c("Age","Genotype")])
+pheatmap(assay(ntd_csc)[select_csc,], cluster_rows=FALSE, show_rownames=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+```
+```{r heatmap of the most variable genes}
+# Creates a heatmap of top differentially expressed genes and clusters samples based on expression
+#
+# Args:
+#   rld_object: rlog transformed count matrix
+#   num_genes: number of top differentially expressed genes you want to examine
+
+MakeHeatMap <- function(rld_object, num_genes){
+  topVarGenes <- head(order(-rowVars(assay(rld_object))),num_genes)
+  mat <- assay(rld_object)[ topVarGenes, ]
+  mat <- mat - rowMeans(mat)
+  df <- as.data.frame(colData(rld_object)[,c("Genotype","Age","Tissue")])
+  rownames(df) <- colnames(mat)
+  pheatmap(mat, annotation_col=df)
+}
+```
+
+```{r volcano plots}
+# Creates a volcano plot of log2fold change vs significance of expression
+#
+# Args:
+#   result_df: a dataframe from a deseq results object
+# Returns:
+#   a volcano plot with significant genes labeled in red
+
+MakeVolcano <- function(resdf, title){
+  ggplot(resdf, aes(log2FoldChange, -log10(padj))) + 
+    geom_point(aes(col=sig)) + scale_color_manual(values=c("red","black")) +
+    ggtitle(title) +
+    geom_text_repel(data = head(resdf, 5), aes(label = GeneID))
+}
+
 ```
 
 ```{r sample-to-sample distances}
-sampleDists <- dist(t(assay(vsd)))
 library("RColorBrewer")
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+# vsd of all
+sampleDists <- dist(t(assay(vsd)))
 sampleDistMatrix <- as.matrix(sampleDists)
 rownames(sampleDistMatrix) <- paste(vsd$Age, vsd$Genotype, sep="-")
 colnames(sampleDistMatrix) <- NULL
-colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
 pheatmap(sampleDistMatrix,
          clustering_distance_rows=sampleDists,
          clustering_distance_cols=sampleDists,
          col=colors)
+
+# vsd of med
+sampleDists_med <- dist(t(assay(vsd_med)))
+sampleDistMatrix_med <- as.matrix(sampleDists_med)
+rownames(sampleDistMatrix_med) <- paste(vsd_med$Age, vsd_med$Genotype, sep="-")
+colnames(sampleDistMatrix_med) <- NULL
+pheatmap(sampleDistMatrix_med,
+         clustering_distance_rows=sampleDists_med,
+         clustering_distance_cols=sampleDists_med,
+         col=colors)
+
+# vsd of csc
+sampleDists_csc <- dist(t(assay(vsd_csc)))
+sampleDistMatrix_csc <- as.matrix(sampleDists_csc)
+rownames(sampleDistMatrix_csc) <- paste(vsd_csc$Age, vsd_csc$Genotype, sep="-")
+colnames(sampleDistMatrix_csc) <- NULL
+pheatmap(sampleDistMatrix_csc,
+         clustering_distance_rows=sampleDists_csc,
+         clustering_distance_cols=sampleDists_csc,
+         col=colors)
 ```
 
 ```{r PCA plot os samples}
-# customized PCA Plot
+# customized PCA Plot for med & csc
 pcaData <- plotPCA(vsd, intgroup=c("Age", "Genotype"), returnData=TRUE)
 percentVar <- round(100 * attr(pcaData, "percentVar"))
 ggplot(pcaData, aes(PC1, PC2, color = Genotype, shape = Age)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed()
+
+
+# customized PCA Plot for med
+pcaData_med <- plotPCA(vsd_med, intgroup=c("Age", "Genotype"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData_med, "percentVar"))
+ggplot(pcaData_med, aes(PC1, PC2, color = Genotype, shape = Age)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed()
+
+# customized PCA Plot for csc
+pcaData_csc <- plotPCA(vsd_csc, intgroup=c("Age", "Genotype"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData_csc, "percentVar"))
+ggplot(pcaData_csc, aes(PC1, PC2, color = Genotype, shape = Age)) +
   geom_point(size=3) +
   xlab(paste0("PC1: ",percentVar[1],"% variance")) +
   ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
