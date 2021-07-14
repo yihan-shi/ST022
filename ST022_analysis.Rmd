@@ -1,0 +1,218 @@
+---
+title: "ST022_analysis"
+author: "Yihan"
+date: "7/13/2021"
+output: html_document
+---
+
+```{r load libary}
+library(DESeq2)
+library(pheatmap)
+library(ggplot2)
+library(ggrepel)
+library(tidyverse)
+library(dplyr)
+library(gplots)
+library(RColorBrewer)
+library(genefilter)
+library(cowplot)
+library(apeglm)
+library(org.Mm.eg.db)
+library(pathview) 
+library(gageData)
+library(gage) 
+library(clusterProfiler) 
+library(enrichplot)
+library(vsn)
+```
+
+
+```{r import data}
+data("go.sets.mm")
+data("go.subs.mm")
+data("kegg.sets.mm")
+data("sigmet.idx.mm")
+```
+
+```{r functions}
+# Read in sample sheet and append sample name as row labels
+# Args:
+#   input.file: a .txt samplesheet
+#
+# Returns:
+#   table: a data table
+ReadTable <- function(input.file) {
+  table <- read.table(input.file, header=T, sep="\t")
+  rownames(table) <- table$SampleName
+  return(table)
+}
+
+
+# Subsets sample sheet to only include specified tissue
+#
+# Args:
+#   table: sample sheet on samples
+#   age: age of animals to be analyzed
+#
+# Returns:
+#   table: a subsetted table
+SetTissue <- function(table, tissue) {
+  table <- subset(table, Tissue == tissue)
+  return(table)
+}
+```
+
+```{r read in the sample sheet}
+# must read in as a 'text delimited' txt file
+sampleTable <- ReadTable("data/Sample_sheet2.txt")
+
+sampletable_med <- subset(sampleTable, Tissue == "med")
+sampletable_csc <- subset(sampleTable, Tissue == "csc")
+
+# load in the count data to produce a count matrix
+# directory is path to directory where the counts are stored (one per sample)
+# design is how we wish to model the data: here we are measuring differences by genotype
+ddsHTSeq <- DESeqDataSetFromHTSeqCount(sampleTable = sampleTable,
+                                       directory = "data/4th_col",
+                                       design = ~ 1)
+```
+
+```{r filter low counts and re-factor}
+# pre-filter to exclude rows with few reads, reduce memory size of ddsHTSeq object,
+# and increase speed of transformation and testing functions
+
+keep <- rowSums(counts(ddsHTSeq)) >= 10
+ddsHTSeq_filtered <- ddsHTSeq[keep,]
+
+# add a new "group" column to ddsHTSeq_filtered object by pasting 3 existing columns
+ddsHTSeq_filtered$group <- factor(paste0(ddsHTSeq_filtered$Age, 
+                                         ddsHTSeq_filtered$Genotype,
+                                         ddsHTSeq_filtered$Tissue))
+
+# set Genotype, Age, Tissue as a factor and relevel 'WT' as baseline
+ddsHTSeq_filtered$Genotype <- factor(ddsHTSeq_filtered$Genotype)
+ddsHTSeq_filtered$Age <- factor(ddsHTSeq_filtered$Age)
+ddsHTSeq_filtered$Tissue <- factor(ddsHTSeq_filtered$Tissue)
+
+ddsHTSeq_filtered$Genotype <- relevel(ddsHTSeq_filtered$Genotype, ref = "WT")
+
+design(ddsHTSeq_filtered) <- ~ group
+```
+
+```{r transform matrix using variance stabilizing transformation}
+vsd <- vst(ddsHTSeq_filtered, blind = FALSE)
+```
+
+```{r fit statistical model}
+dds <- DESeq(ddsHTSeq_filtered)
+
+# results function extracts a results table with log2 fold changes, p values and 
+# adjusted p values.
+res <- results(dds)
+# res_age <- results(dds, contrast = c("Age","9w","5w"))
+```
+
+```{r log fold change shrinkage}
+resultsNames(dds)
+```
+
+
+```{r log fold change shrinkage_2}
+resLFC_5w_cscbyGeno <- lfcShrink(dds, coef ="group_5wWTcsc_vs_5wKIcsc", type="apeglm")
+
+resLFC_cscbyAge_59 <- lfcShrink(dds, coef ="group_9wKIcsc_vs_5wKIcsc", type="apeglm")
+
+resLFC_cscbyAge_5p <- lfcShrink(dds, coef ="group_pKIcsc_vs_5wKIcsc", type="apeglm")
+```
+
+```{r MA-plot}
+plotMA(res, ylim=c(-2,2), cex = 0.8)
+abline(h = c(-1,1), col="dodgerblue", lwd=2)
+
+plotMA(resLFC_5w_cscbyGeno, ylim=c(-2,2), cex = 0.8)
+abline(h = c(-1,1), col="dodgerblue", lwd=2)
+
+plotMA(resLFC_cscbyAge_59, ylim=c(-2,2))
+
+plotMA(resLFC_cscbyAge_5p, ylim=c(-2,2), cex = 0.8)
+abline(h = c(-1,1), col="dodgerblue", lwd=2)
+```
+
+
+```{r identify to detect individual genes}
+# interactively detect the row number of individual genes by clicking on the plot
+idx <- identify(res$baseMean, res$log2FoldChange)
+
+# recover the gene identifiers by saving the resulting indices
+rownames(res)[idx]
+```
+
+```{r examine the counts of reads for a single gene across the groups}
+# specify the gene which had the smallest p value from the results table
+plotCounts(dds, gene = which.min(res$padj), intgroup = "Genotype")
+
+# specify individual gene from the results table
+plotCounts(dds, gene = "Iba57", intgroup = "Genotype")
+
+plotCounts(dds, gene = "Gfap", intgroup = "Genotype")
+
+plotCounts(dds, gene = "Atxn7", intgroup = "Genotype")
+
+plotCounts(dds, gene = "Rbfox3", intgroup = "Genotype")
+
+plotCounts(dds, gene = "Chat", intgroup = "Genotype")
+
+# more customized plot
+d <- plotCounts(dds, gene = "Atxn7", intgroup="Genotype", 
+                returnData=TRUE)
+
+ggplot(d, aes(x = Genotype, y=count)) + 
+  geom_point(position = position_jitter(w = 0.1,h = 0)) + 
+  scale_y_log10(breaks = c(25,100,400))
+
+# group by age?
+```
+
+```{r transformations on the variance}
+# this gives log2(n + 1)
+# the standard deviation of the transformed data, across samples, against the mean
+# a flat curve should be the goal of such transformations
+ntd <- normTransform(dds)
+meanSdPlot(assay(ntd))
+```
+
+```{r Heatmap of the count matrix}
+select <- order(rowMeans(counts(dds,normalized = TRUE)),
+                decreasing=TRUE)[1:20]
+
+df <- as.data.frame(colData(dds)[,c("Age","Genotype")])
+pheatmap(assay(ntd)[select,], cluster_rows=FALSE, show_rownames=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+```
+
+```{r sample-to-sample distances}
+sampleDists <- dist(t(assay(vsd)))
+library("RColorBrewer")
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$Age, vsd$Genotype, sep="-")
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+```
+
+```{r PCA plot os samples}
+# customized PCA Plot
+pcaData <- plotPCA(vsd, intgroup=c("Age", "Genotype"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(PC1, PC2, color = Genotype, shape = Age)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed()
+```
+
+
+
