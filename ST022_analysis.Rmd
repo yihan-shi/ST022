@@ -142,10 +142,33 @@ vsd_med <- vst(dds_med_filtered, blind = FALSE)
 vsd_csc <- vst(dds_csc_filtered, blind = FALSE)
 ```
 
+```{r}
+normalized_med <- data.frame(assay(vsd_med))
+# normalized_med <- data.frame(dds_med$sizeFactor)
+setwd("data")
+write.csv(normalized_med, file = "RNA-seq_med.csv")
+```
+
+
 ```{r fit statistical model}
 dds <- DESeq(ddsHTSeq_filtered)
 dds_med <- DESeq(dds_med_filtered)
 dds_csc <- DESeq(dds_csc_filtered)
+```
+
+```{r export DESeq}
+normalized_med <- data.frame(dds_med$sizeFactor)
+setwd("data")
+write.csv(normalized_med, file = "RNA-seq_med.csv")
+```
+
+
+```{r fit statistical model}
+library("IHW")
+resIHW <- results(dds, filterFun=ihw)
+summary(resIHW)
+sum(resIHW$padj < 0.1, na.rm=TRUE)
+metadata(resIHW)$ihwResult
 
 # results function extracts a results table with log2 fold changes, p values and 
 # adjusted p values. More strict filtering to increase power is automatically applied via 
@@ -154,23 +177,54 @@ dds_csc <- DESeq(dds_csc_filtered)
 # By Tissue type: 9wWT med vs csc
 res_9w_tissuetype <- results(dds, contrast=c("group", "9wWTmed", "9wWTcsc")) 
 # sort difference of individual genes based on log2fc
-res_9w_tissuetype[order(abs(res_9w_tissuetype$log2FoldChange), decreasing = TRUE),] 
-
-# By genotype for med KI vs WT (9w)
-res_9w_med_genotype <- results(dds, contrast=c("group","9wWTmed","9wKImed")) 
-print(res_9w_med_genotype[order(abs(res_9w_med_genotype$log2FoldChange), decreasing = TRUE), ], nrow=10)
-
-# By genotype for csc KI vs WT (9w)
-res_9w_csc_genotype <- results(dds, contrast=c("group","9wWTcsc","9wKIcsc")) 
-print(res_9w_csc_genotype[order(abs(res_9w_med_genotype$log2FoldChange), decreasing = TRUE), ], nrow=10)
-
-# By genotype for med KI vs WT (p)
-res_p_med_genotype <- results(dds, contrast=c("group","pWTmed","pKImed")) 
-print(res_p_med_genotype[order(abs(res_9w_med_genotype$log2FoldChange), decreasing = TRUE), ], nrow=10)
+res_9w_tissuetype[order(abs(res_9w_tissuetype$log2FoldChange), decreasing = TRUE),]
 ```
+
+
+```{r variable genes med KI vs WT (9w)}
+# By genotype for med KI vs WT (9w)
+res_9w_med_genotype <- results(dds, contrast=c("group","9wWTmed","9wKImed"), cooksCutoff=FALSE) 
+res_9w_med_genotype[order(abs(res_9w_med_genotype$log2FoldChange), decreasing = TRUE),]
+```
+
+
+```{r variable genes csc KI vs WT (9w)}
+# By genotype for csc KI vs WT (9w)
+res_9w_csc_genotype <- results(dds, contrast=c("group","9wWTcsc","9wKIcsc"), cooksCutoff=FALSE) 
+res_9w_csc_genotype[order(abs(res_9w_csc_genotype$log2FoldChange), decreasing = TRUE), ]
+```
+
+
+```{r variable genes for med KI vs WT (p)}
+# By genotype for med KI vs WT (p)
+res_p_med_genotype <- results(dds, contrast=c("group","pWTmed","pKImed"), cooksCutoff=FALSE) 
+res_p_med_genotype[order(abs(res_p_med_genotype$log2FoldChange), decreasing = TRUE), ]
+```
+
+
+```{r variable genes csc KI vs WT (p)}
+# By genotype for csc KI vs WT (p)
+res_p_csc_genotype <- results(dds, contrast=c("group","pWTcsc","pKIcsc"), cooksCutoff=FALSE) 
+res_p_csc_genotype[order(abs(res_p_csc_genotype$log2FoldChange), decreasing = TRUE), ]
+```
+
+
+```{r variable genes med KI vs WT (5w)}
+# By genotype for med KI vs WT (5w)
+res_5w_med_genotype <- results(dds, contrast=c("group","5wWTmed","5wKImed"), cooksCutoff=FALSE, independentFiltering = FALSE) 
+res_5w_med_genotype[order(abs(res_5w_med_genotype$log2FoldChange), decreasing = TRUE), ]
+```
+
+
+```{r variable genes csc KI vs WT (5w)}
+# By genotype for csc KI vs WT (5w)
+res_5w_csc_genotype <- results(dds, contrast=c("group","5wWTcsc","5wKIcsc"), cooksCutoff=FALSE) 
+res_5w_csc_genotype[order(abs(res_5w_csc_genotype$log2FoldChange), decreasing = TRUE), ]
+```
+
 ```{r heatmap of most variable genes in med and csc}
 # heatmap of most variable genes in med
-rld_med <- rlog(dds_med, blind=F)
+rld_med <- rlog(dds_med, blind = TRUE, intercept, betaPriorVar, fitType = "parametric")
 
 topVarGenes <- order(-rowVars(assay(rld_med)))[0:500]
 mat_m <- assay(rld_med)[ topVarGenes, ]
@@ -240,7 +294,7 @@ abline(h = c(-1,1), col="dodgerblue", lwd=2)
 ```
 
 
-```{r log fold change shrinkage_2, eval=FALSE, include=FALSE}
+```{r log fold change shrinkage_2}
 resLFC_5wbyGeno <- lfcShrink(dds, coef ="group_5wWTcsc_vs_5wKIcsc", type="apeglm")
 resLFC_cscbyAge_59 <- lfcShrink(dds, coef ="group_9wKIcsc_vs_5wKIcsc", type="apeglm")
 resLFC_cscbyAge_5p <- lfcShrink(dds, coef ="group_pKIcsc_vs_5wKIcsc", type="apeglm")
@@ -384,6 +438,7 @@ df <- as.data.frame(colData(dds_csc)[,c("Age","Genotype")])
 pheatmap(assay(ntd_csc)[select_csc,], cluster_rows=FALSE, show_rownames=FALSE,
          cluster_cols=FALSE, annotation_col=df)
 ```
+
 ```{r heatmap of the most variable genes}
 # Creates a heatmap of top differentially expressed genes and clusters samples based on expression
 #
